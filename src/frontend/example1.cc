@@ -1,0 +1,21 @@
+#include <cstdlib>
+#include <iostream>
+
+using namespace std;
+
+void program_body()
+{
+  cout << "Testing.\n";
+}
+
+int main()
+{
+  try {
+    ios::sync_with_stdio( false );
+    program_body();
+    return EXIT_SUCCESS;
+  } catch ( const exception& e ) {
+    cerr << e.what() << "\n";
+    return EXIT_FAILURE;
+  }
+}
