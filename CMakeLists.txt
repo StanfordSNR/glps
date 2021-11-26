@@ -9,8 +9,18 @@ include ( etc/tests.cmake )
 
 find_package ( PkgConfig )
 
+find_package ( boost_headers REQUIRED Boost )
+include_directories ( SYSTEM ${Boost_INCLUDE_DIRS} )
+add_compile_options ( ${Boost_CFLAGS} )
+
+pkg_check_modules ( FFTW REQUIRED fftw3 )
+include_directories ( SYSTEM ${FFTW_INCLUDE_DIRS} )
+add_compile_options ( ${FFTW_CFLAGS} )
+
 include_directories ("${PROJECT_SOURCE_DIR}/src/util")
+include_directories ("${PROJECT_SOURCE_DIR}/src/signal")
 
 add_subdirectory ("${PROJECT_SOURCE_DIR}/src/util")
+add_subdirectory ("${PROJECT_SOURCE_DIR}/src/signal")
 add_subdirectory ("${PROJECT_SOURCE_DIR}/src/frontend")
 add_subdirectory ("${PROJECT_SOURCE_DIR}/src/tests")

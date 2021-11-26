@@ -1,0 +1,244 @@
+First, I want to make sure we're on the same page about a first-step
+scenario and question that I think we'd all love to game out in
+simulation. What about something like this?
+
++ The "transmitter" sends a known (pseudorandom) bandlimited,
+  repeating signal of Gaussian white noise.
+  - Example parameters: Let's say it's sending 10 watts of Gaussian
+    white noise between 432.3 and 432.4 MHz (so, 100 kHz wide), and
+    the signal repeats every 81.92 milliseconds. (This is >10,000
+    miles of travel time through ice, so I don't think the ambiguity
+    that comes from a repeating signal will be a problem for our
+    purposes.)
+
++ The "tag" switches its antenna between shorted and open according to
+a known binary sequence that repeats forever and has equal number of
+ones and zeroes.
+  - Example parameters: Let's say the repeating binary sequence is 64
+    bits long, with 32 randomly-placed "1" bits and 32 "0" bits, and
+    the sequence gets played at 25 kHz, so the tag switches as
+    frequently as every 40 microseconds between "shorted" and "open,"
+    and the whole sequence repeats every 2.56 milliseconds. When
+    shorted, let's say the tag has a "normalized reflectivity" of 1,
+    and when open, let's say it has a reflectivity of 0.99. So there's
+    essentially a 1% difference in the reflectivity of the tag between
+    the two states. Let's assume this switching behavior is not
+    instant but is also effectively bandlimited to a 100 kHz-wide band
+    too.
+  - Unknown #1: the time offset of the beginning of the 64-bit
+    sequence relative to wall-clock time. This is an uncertain
+    real-valued parameter that can lie anywhere between 0 and 2.56
+    milliseconds (it doesn't have to be an integer number of bits).
+
++ The "receiver" receives the following signal:
+  - The "transmitter" signal
+  - PLUS the "reflected signal", which means:
+            the same "transmitter" signal,
+            multiplied by the time-varying reflectivity of the tag,
+            multiplied by 100 dB of loss,
+            and then delayed by the speed-of-light-in-ice travel time
+	    from transmitter-to-tag-to-receiver.
+
+               Unknown #2: this time offset. Let's call this an
+               uncertain real-valued parameter that can lie anywhere
+               between 200 nanoseconds [~50 meters] and 4000
+               nanoseconds [~1 km].
+
+  - PLUS
+            unknown Gaussian white noise with average power of 10 milliwatts
+
++ The receiver's job is to listen to the incoming signal and figure
+out the correct values of Unknown #1 and Unknown #2. To do this, it
+performs a (notional) 2D cross-correlation between (a) the incoming
+signal and (b) a synthetic local reference version of the "reflected
+signal" for every possible value of Unknowns #1 and #2. The peak of
+that 2D cross-correlation is the best guess of a fix (cold start).
+
++ And then here's the kind of question I think we want to answer as
+the bottom-line:
+
+"Under these conditions, how long does the receiver have to listen to
+the incoming signal so that there's at least a 90% probability that
+the max value of the 2D cross-correlation produces a value for Unknown
+#2 that's within 0.1 nanoseconds of the correct value?"
+
+===
+
+Now the question is about how to calculate this.
+
+Here is one possible way I could think of that might work, without
+using a ton of memory.
+
+(1) Materialize one repetition of the "transmitter" signal, sampled at
+the Nyquist rate of 200 kilosamples per second. So this is 200,000
+Sa/s x 81.92 ms = 16,384 random real numbers, independently drawn from
+the Gaussian distribution with mean=0 and stddev=sqrt(10).
+
+(2) Materialize one repetition of the "tag" signal, also sampled at
+200 kilosamples per second. So this is 200,000 Sa/s x 2.56 ms = 512
+ones and zeroes, corresponding to the original 64-bit sequence where
+each bit got repeated 8 times.
+
+(3) Choose a random real number for Unknown #1 on the interval [0,
+2.56 milliseconds) and for Unknown #2 on [200 nanoseconds, 4000
+nanoseconds].
+
+(4) Synthesize the "reflected signal" by doing the following:
+
+    Convert the "tag" signal to the frequency domain (so it becomes
+    256 complex numbers), and multiply each frequency component by a
+    phase offset corresponding to the time delay of Unknown #1.
+
+    Convert the "transmitter" signal to the frequency domain (so it
+    becomes 8,192 complex numbers) and then multiply each frequency
+    component by a phase offset corresponding to the time delay of
+    Unknown #2.
+
+    Convert both signals back to the time domain, and multiply them
+    componentwise (repeating the tag signal 32 times) to end up with
+    the 16,384-sample reflected signal. Also multiply by that 100 dB
+    of loss, i.e. multiply the sample values by 0.00001.
+
+(5) Now make the full "receiver" signal [sans noise] by adding the
+"reflected signal" to the original "transmitter" signal.
+
+(6) Now you have 16,384 samples that correspond to one repetition
+(81.92 ms) of the "receiver signal" [before noise] sampled at 200
+kSa/s. From here, I think you can simulate any duration of received
+signal (including noise) by just accumulating repetitions of this,
+*plus* independent Gaussian white noise. So if you want to simulate
+(e.g.) 60 minutes of reception, that would be about 44,000 repetitions
+of the signal, and the only thing varying is the noise. So you'd
+basically take those 16,384 samples, and multiply every value by
+44,000, and then to each sample you'll also add the noise.
+
+In theory, that means to each sample you're adding 44,000 i.i.d
+Gaussian deviates (drawn from the distribution with mean=0 and
+stddev=sqrt(.01), to represent 10 milliwatts of average noise
+power). But you can also add to each sample a single Gaussian deviate
+drawn from the Gaussian distribution with mean=0 and
+stddev=sqrt(44000)sqrt(0.01).
+
+So now we have 16,384 real numbers that represent the full 60 minutes
+of the "receiver signal," with the correct SNR. Of course the only
+reason this works is that the "tag signal" duration perfectly divides
+the "transmitter signal" duration, we're assuming all the clocks are
+perfect, the receiver is linear and has no quantization, etc. But I
+think for answering the bottom-line question from above, as a first
+step, these are probably acceptable simplifications.
+
+(7) Now it's time to do the cross-correlation. There's really no point
+in computing the full 2D cross-correlation at 0.1 nanosecond
+precision, because we already know that Unknown #1 lies within [0,
+2.56 milliseconds) and Unknown #2 lies within [200 ns, 4000 ns]. So I
+think just doing this in the time domain is probably better in this
+situation.
+
+To compute *one* "correlation* requires 16,384 multiplications -- it's
+the dot product between a local reference version of the "reflected
+signal" (for a given Unknown #1 and #2) and the actual "receiver
+signal." As a first step, I would compute the correlation for a
+reasonable grid of values -- e.g. for 8,192 evenly spaced values of
+Unknown #1 between [0, 2.56 milliseconds), and for 16 evenly spaced
+values of Unknown #2 between [0 ns, 5000 ns]. Each of these spacings
+works out to be 312.5 nanoseconds, which is 16x finer granularity than
+the original Nyquist rate (of 200 kSa/s => 5 microseconds), meaning
+the output is overdetermined, so we should be safe with only this
+granularity to start.
+
+So that's 8,192 x 16 = 131,072 total correlations to compute, and each
+correlation requires synthesizing a reference version of the reflected
+signal. And then I would basically try to drill down recursively and
+hill-climb the cross-correlation function from there. E.g. maybe we
+just find the highest point and the two points surrounding it in
+either dimension (i.e. each Unknown value). That makes 3x3=9
+(evenly-spaced) points in a 2D grid, spaced at 312.5 nanoseconds
+apart, and hopefully the true peak lies somewhere within that
+extent. So the next would be to turn it into a 5x5=25 grid by
+computing the correlation of the remaining 16 points, so now you have
+a 2D grid spaced at 156.25 nanoseconds separation. And then... repeat
+this process twelve times until the spacing is < 0.1 ns, and whatever
+is now the best correlation is the winner. And the winning value of
+Unknown #2 is, hopefully, close to the true value!
+
+===
+
+- Take a single 10 Hz sine wave.
+
+- Sample it (perfectly) at 200 samples per second for 10 seconds,
+  producing 2000 floating-point samples total.
+
+- Using your fractional delay technique, delay the sampled sine wave
+  by some unknown value "T" chosen between 50 nanoseconds and 4000
+  nanoseconds, resulting in a new set of 2000 floating-point samples.
+
+- Checkpoint #1: compare these samples ("sine wave => sample =>
+  delay") with what you would get by doing ("sine wave => delay =>
+  sample"), i.e. by just taking sin(2 * pi * 10 * (t - T)) and then
+  sampling that. Do the samples match up almost perfectly? Hopefully
+  yes, which indicates the fractional delay technique is working
+  properly. Confirm with a few values of T.
+
+- Checkpoint #2: compute the correlation between the signal and a
+  version of itself with the exact same value of "T" (i.e. with the
+  exact same signal again). Is it 1? (Confirm with a few values of
+  T...)
+
+- Checkpoint #3: compute the correlation between the signal and a
+  bunch of alternate versions, one with every possible value of "T"
+  between 50 nanoseconds and 4000 nanoseconds (sampled at 0.1 ns
+  granularity, so 39,500 data points total). Make a graph of this -- I
+  think we'd love to see it! Is there a single peak at the correct
+  value of T, or what does it look like? (Try this with different
+  values of the true T.)
+
+- Checkpoint #4: After looking at a finely-sampled graph of the
+  cross-correlation, what search granularity would be necessary to
+  find the peak in practice? Is starting with 16 samples (evenly
+  spaced) between 50-4000 ns enough so that the "top 3" are indeed
+  going to be straddling the true peak?
+
+===
+
+So, I guess my conservative thinking would be that, among other
+things, we probably want to agree on a few sets of "example scenario"
+parameters (the bandwidth, the transmitter signal, the tag code, the
+path loss, etc.) and make sure that we are confident in the answer
+we're getting. That probably means a redundant/independent
+implementation and cross-checking them against each other, and
+reporting a bunch of intermediate statistics in a standardized/clear
+way (not only overall accuracy, but maybe things like signal strength
+at the tag, signal strength at the receiver, SNR pre-matched-filter,
+SNR post-matched-filter, etc.), and if we have a disagreement, talking
+it out and deciding what the right approach and answer really are.
+
+Then, step #2 is probably putting in some automated
+consistency/regression tests to lock in that correctness, so that
+whatever else happens to the simulation, we make sure we never screw
+it up at least on those candidate examples.
+
+And then, I would think next steps probably involve exploring at least
+four things:
+
+(a) how does the idealized system (with perfect clocks, etc.) behave
+across a range of bandwidths, codes, SNRs, listen times, etc. -- what
+is the favorable regime?
+
+(b) how does the system behave as life gets less ideal and more
+realistic (i.e. add simulated clock drift/jitter, or some multipath,
+etc.)
+
+(c) what are some real-world plausible figures (to feed into the
+simulation) for path loss, clock drift/jitter, ability of a small tag
+to backscatter the incoming signal, etc.?
+
+(d) can we really implement this (no longer a simulation) to run
+practically on an SDR, and what happens when we try it out? how close
+are the real results to the simulation?
+
+In part (c) and (d), we're doing some SDR experiments, probably
+starting on the bench and maybe graduating to free space experiments
+where we try to measure across a few hundred feet (or maybe eventually
+line-of-site from here to the Coyote Hills across the Bay or something
+like that?). At this point I'm just spitballing but this is sort of
+what my instincts are telling me. There's a lot of meat here!

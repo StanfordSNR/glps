@@ -1,6 +1,12 @@
 macro (add_test_exec exec_name)
     add_executable ("${exec_name}" "${exec_name}.cc")
-    target_link_libraries ("${exec_name}" util ${ARGN})
+    target_link_libraries ("${exec_name}" util signal ${ARGN})
+    target_link_libraries ("${exec_name}" ${Boost_LDFLAGS})
+    target_link_libraries ("${exec_name}" ${Boost_LDFLAGS_OTHER})
+    target_link_libraries ("${exec_name}" ${FFTW_LDFLAGS})
+    target_link_libraries ("${exec_name}" ${FFTW_LDFLAGS_OTHER})
+    target_link_libraries ("${exec_name}" "-lfftw3_threads")
 endmacro (add_test_exec)
 
 add_test_exec (alwayspass)
+add_test_exec (delay)
