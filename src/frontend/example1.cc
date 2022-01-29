@@ -1,4 +1,5 @@
 #include "fft.hh"
+#include "mmap.hh"
 #include "random.hh"
 #include "signal.hh"
 
@@ -30,8 +31,13 @@ TimeDomainSignal synthesize_reflected_signal( const double tag_time_offset,
 
 TimeDomainSignal decorrelate( const TimeDomainSignal& input, const TimeDomainSignal& nuisance );
 
-void program_body()
+void program_body( const char* const wisdom_filename )
 {
+  /* load pre-planned FFTs from file */
+  ReadOnlyFile wisdom { wisdom_filename };
+  FFTW fftw_state;
+  fftw_state.load_wisdom( wisdom );
+
   auto rng = get_random_generator();
 
   /* step 1: make transmitter signal */
@@ -218,11 +224,21 @@ TimeDomainSignal decorrelate( const TimeDomainSignal& input, const TimeDomainSig
   return ret;
 }
 
-int main()
+int main( int argc, char* argv[] )
 {
   try {
     ios::sync_with_stdio( false );
-    program_body();
+
+    if ( argc <= 0 ) {
+      abort();
+    }
+
+    if ( argc != 2 ) {
+      cerr << "Usage: " << argv[0] << " wisdom_file\n";
+      return EXIT_FAILURE;
+    }
+
+    program_body( argv[1] );
     return EXIT_SUCCESS;
   } catch ( const exception& e ) {
     cerr << e.what() << "\n";

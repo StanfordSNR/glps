@@ -4,9 +4,19 @@
 
 #include <complex>
 #include <fftw3.h> // must be included last, after <complex>
+#include <string>
 
-/* N.B.: Plan must be created before input arrays are initialized with data */
-/* See https://www.fftw.org/fftw3_doc/Complex-One_002dDimensional-DFTs.html */
+class FFTW
+{
+  bool threaded_;
+
+public:
+  FFTW( const bool threaded = false );
+  ~FFTW();
+
+  void load_wisdom( const std::string_view str );
+  std::string save_wisdom();
+};
 
 class FFTPlan
 {
@@ -14,7 +24,7 @@ class FFTPlan
   fftw_plan plan_;
 
 public:
-  FFTPlan( Signal& input, Signal& output, const int sign );
+  FFTPlan( const size_t size, const int sign, const bool make_new_plan );
   ~FFTPlan();
   void execute( const Signal& input, Signal& output );
 
@@ -27,8 +37,8 @@ class ForwardFFT
   FFTPlan plan_;
 
 public:
-  ForwardFFT( TimeDomainSignal& input, BasebandFrequencyDomainSignal& output )
-    : plan_( input.signal(), output.signal(), FFTW_FORWARD )
+  ForwardFFT( const size_t size )
+    : plan_( size, FFTW_FORWARD, false )
   {}
 
   void execute( const TimeDomainSignal& input, BasebandFrequencyDomainSignal& output );
@@ -39,8 +49,8 @@ class ReverseFFT
   FFTPlan plan_;
 
 public:
-  ReverseFFT( BasebandFrequencyDomainSignal& input, TimeDomainSignal& output )
-    : plan_( input.signal(), output.signal(), FFTW_BACKWARD )
+  ReverseFFT( const size_t size )
+    : plan_( size, FFTW_BACKWARD, false )
   {}
 
   void execute( const BasebandFrequencyDomainSignal& input, TimeDomainSignal& output );

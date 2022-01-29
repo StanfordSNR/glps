@@ -64,8 +64,8 @@ void program_body()
   BasebandFrequencyDomainSignal frequency_domain { TRANSMITTER_SIGNAL_LEN, SAMPLE_RATE };
   BasebandFrequencyDomainSignal frequency_domain_copy { TRANSMITTER_SIGNAL_LEN, SAMPLE_RATE };
   TimeDomainSignal delayed_signal = { TRANSMITTER_SIGNAL_LEN, SAMPLE_RATE };
-  ForwardFFT fft { transmitter_signal, frequency_domain };
-  ReverseFFT ifft { frequency_domain, delayed_signal };
+  ForwardFFT fft { transmitter_signal.size() };
+  ReverseFFT ifft { frequency_domain.size() };
 
   /* make transmitter signal */
   normal_distribution<double> transmitter_signal_dist { 0.0, sqrt( TRANSMITTER_POWER ) };

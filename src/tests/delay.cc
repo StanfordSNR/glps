@@ -1,4 +1,5 @@
 #include "fft.hh"
+#include "mmap.hh"
 
 #include <cmath>
 #include <cstdlib>
@@ -22,14 +23,7 @@ void test_config( double SAMPLE_RATE, double FREQUENCY, double DELAY, size_t LEN
   /* fractional delay */
   auto simulated_with_delay = delay( input, DELAY );
 
-  cerr << "# sample rate: " << SAMPLE_RATE << " Sa/s\n";
-  cerr << "# duration: " << input.duration() << " s\n";
-
-  cout << "# t target simulated\n";
   for ( unsigned int i = 0; i < target_reference.size(); i++ ) {
-    const double t = target_reference.index_to_time( i );
-    cout << t << " " << target_reference.at( i ).real() << " " << simulated_with_delay.at( i ).real() << "\n";
-
     if ( abs( simulated_with_delay.at( i ).imag() ) > 1e-8 ) {
       throw runtime_error( "simulated delayed signal had imaginary component at index " + to_string( i ) );
     }
@@ -40,8 +34,12 @@ void test_config( double SAMPLE_RATE, double FREQUENCY, double DELAY, size_t LEN
   }
 }
 
-void program_body()
+void program_body( const string& wisdom_filename )
 {
+  ReadOnlyFile wisdom { wisdom_filename };
+  FFTW fftw_state;
+  fftw_state.load_wisdom( wisdom );
+
   /* test configurations chosen so that duration is multiple of sinusoid period */
   /* otherwise it's trickier to compute the correct "target reference" signal */
   test_config( 200, 10, 0.157272, 2000 );
@@ -53,11 +51,21 @@ void program_body()
   test_config( 200000, 25000, 0.00007, 16384 );
 }
 
-int main()
+int main( int argc, char* argv[] )
 {
   try {
     ios::sync_with_stdio( false );
-    program_body();
+
+    if ( argc <= 0 ) {
+      abort();
+    }
+
+    if ( argc != 2 ) {
+      cerr << "Usage: " << argv[0] << " wisdom_filename\n";
+      return EXIT_FAILURE;
+    }
+
+    program_body( argv[1] );
     return EXIT_SUCCESS;
   } catch ( const exception& e ) {
     cerr << e.what() << "\n";

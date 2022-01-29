@@ -2,6 +2,7 @@
 
 #include <array>
 #include <chrono>
+#include <fstream>
 #include <iomanip>
 #include <optional>
 #include <ostream>
@@ -24,7 +25,10 @@ public:
 
   static void pp_ns( std::ostream& out, const uint64_t duration_ns )
   {
-    out << std::fixed << std::setprecision( 1 ) << std::setw( 5 ) << std::setfill( ' ' );
+    std::ofstream out_tmp;
+    out_tmp.copyfmt( out );
+
+    out << std::fixed << std::setprecision( 1 );
 
     if ( duration_ns < THOUSAND ) {
       out << duration_ns << " ns";
@@ -33,8 +37,10 @@ public:
     } else if ( duration_ns < BILLION ) {
       out << duration_ns / MILLION << " ms";
     } else {
-      out << duration_ns / BILLION << " s ";
+      out << duration_ns / BILLION << " s";
     }
+
+    out.copyfmt( out_tmp );
   }
 
   struct Record

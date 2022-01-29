@@ -1,51 +1,131 @@
 #include "fft.hh"
 #include "exception.hh"
+#include "timer.hh"
 
+#include <iostream>
 #include <thread>
 
 using namespace std;
 
-/* make sure that global FFTW state is cleaned up when program exits */
-class FFTW
+FFTW::FFTW( const bool threaded )
+  : threaded_( false )
 {
-public:
-  FFTW()
-  {
+  if ( threaded and thread::hardware_concurrency() > 1 ) {
+    threaded_ = true;
+
+    cerr << "Initializing threaded FFTW with " << thread::hardware_concurrency() << " threads... ";
+
     if ( not fftw_init_threads() ) {
       throw unix_error( "fftw_init_threads" );
     }
 
-    if ( thread::hardware_concurrency() > 1 ) {
-      fftw_plan_with_nthreads( thread::hardware_concurrency() );
-    }
-  }
+    fftw_plan_with_nthreads( thread::hardware_concurrency() );
 
-  ~FFTW() { fftw_cleanup_threads(); }
-};
-
-FFTW global_fftw_state;
-
-FFTPlan::FFTPlan( Signal& input, Signal& output, const int sign )
-  : size_( input.size() )
-  , plan_( notnull( "fftw_plan_dft_1d",
-                    fftw_plan_dft_1d( size_,
-                                      reinterpret_cast<fftw_complex*>( input.data() ),
-                                      reinterpret_cast<fftw_complex*>( output.data() ),
-                                      sign,
-                                      FFTW_ESTIMATE | FFTW_PRESERVE_INPUT ) ) )
-{
-  if ( output.size() != size_ ) {
-    throw runtime_error( "output size cannot be less than input size" );
-  }
-
-  if ( fftw_alignment_of( reinterpret_cast<double*>( input.data() ) ) ) {
-    throw runtime_error( "input not sufficiently aligned" );
-  }
-
-  if ( fftw_alignment_of( reinterpret_cast<double*>( output.data() ) ) ) {
-    throw runtime_error( "output not sufficiently aligned" );
+    cerr << "done.\n";
   }
 }
+
+FFTW::~FFTW()
+{
+  if ( threaded_ ) {
+    fftw_cleanup_threads();
+  } else {
+    fftw_cleanup();
+  }
+}
+
+void FFTW::load_wisdom( const string_view str )
+{
+  struct str_and_index
+  {
+    string_view s;
+    size_t index {};
+  };
+
+  const auto read_char = []( void* data ) -> int {
+    const auto ptr = static_cast<str_and_index*>( notnull( "data", data ) );
+    return ptr->s.at( ptr->index++ );
+  };
+
+  str_and_index state { str };
+
+  if ( not fftw_import_wisdom( read_char, &state ) ) {
+    throw runtime_error( "fftw_import_wisdom failed" );
+  }
+}
+
+string FFTW::save_wisdom()
+{
+  unique_ptr<char> wisdom_string { notnull( "fftw_export_wisdom_to_string", fftw_export_wisdom_to_string() ) };
+  return { wisdom_string.get() };
+}
+
+fftw_plan new_fft_plan( const unsigned int size, const int sign )
+{
+  Signal example_input( size );
+  Signal example_output( size );
+
+  if ( fftw_alignment_of( reinterpret_cast<double*>( example_input.data() ) ) ) {
+    throw runtime_error( "internal error: input pointer not sufficiently aligned for FFTW" );
+  }
+
+  if ( fftw_alignment_of( reinterpret_cast<double*>( example_output.data() ) ) ) {
+    throw runtime_error( "internal error: output pointer not sufficiently aligned for FFTW" );
+  }
+
+  cerr << "Planning " << ( ( sign == FFTW_FORWARD ) ? "FFT"s : "iFFT"s ) << " of size " << size << "... ";
+
+  const auto start_time = Timer::timestamp_ns();
+  const fftw_plan ret = notnull( "fftw_plan_dft_1d",
+                                 fftw_plan_dft_1d( size,
+                                                   reinterpret_cast<fftw_complex*>( example_input.data() ),
+                                                   reinterpret_cast<fftw_complex*>( example_output.data() ),
+                                                   sign,
+                                                   FFTW_PATIENT | FFTW_PRESERVE_INPUT ) );
+  const auto finish_time = Timer::timestamp_ns();
+  cerr << "done (";
+  Timer::pp_ns( cerr, finish_time - start_time );
+  cerr << ").\n";
+
+  double adds, muls, fmas;
+  fftw_flops( ret, &adds, &muls, &fmas );
+
+  cerr << "cost: " << fftw_cost( ret ) << " (" << adds << " adds, " << muls << " multiplies, " << fmas
+       << " multiply-accumulates)\n";
+
+  return ret;
+}
+
+fftw_plan premade_fft_plan( const unsigned int size, const int sign )
+{
+  Signal example_input( 1 );
+  Signal example_output( 1 );
+
+  if ( fftw_alignment_of( reinterpret_cast<double*>( example_input.data() ) ) ) {
+    throw runtime_error( "internal error: input pointer not sufficiently aligned for FFTW" );
+  }
+
+  if ( fftw_alignment_of( reinterpret_cast<double*>( example_output.data() ) ) ) {
+    throw runtime_error( "internal error: output pointer not sufficiently aligned for FFTW" );
+  }
+
+  const fftw_plan ret = fftw_plan_dft_1d( size,
+                                          reinterpret_cast<fftw_complex*>( example_input.data() ),
+                                          reinterpret_cast<fftw_complex*>( example_output.data() ),
+                                          sign,
+                                          FFTW_WISDOM_ONLY | FFTW_PRESERVE_INPUT );
+
+  if ( not ret ) {
+    throw runtime_error( "FFT for size " + to_string( size ) + " not found. You may need to run make-fft." );
+  }
+
+  return ret;
+}
+
+FFTPlan::FFTPlan( const size_t size, const int sign, const bool make_new_plan )
+  : size_( size )
+  , plan_( make_new_plan ? new_fft_plan( size, sign ) : premade_fft_plan( size, sign ) )
+{}
 
 FFTPlan::~FFTPlan()
 {
@@ -92,14 +172,16 @@ void ReverseFFT::execute( const BasebandFrequencyDomainSignal& input, TimeDomain
 
 TimeDomainSignal delay( const TimeDomainSignal& signal, const double tau )
 {
-  TimeDomainSignal signal_copy { signal.size(), signal.sample_rate() };
-  BasebandFrequencyDomainSignal frequency_domain { signal.size(), signal.sample_rate() };
-  ForwardFFT fft { signal_copy, frequency_domain };
-  ReverseFFT ifft { frequency_domain, signal_copy };
+  ForwardFFT fft { signal.size() };
+  ReverseFFT ifft { signal.size() };
 
-  signal_copy = signal;
-  fft.execute( signal_copy, frequency_domain );
+  BasebandFrequencyDomainSignal frequency_domain { signal.size(), signal.sample_rate() };
+  fft.execute( signal, frequency_domain );
+
   frequency_domain.delay_and_normalize( tau );
-  ifft.execute( frequency_domain, signal_copy );
-  return signal_copy;
+
+  TimeDomainSignal ret { signal.size(), signal.sample_rate() };
+  ifft.execute( frequency_domain, ret );
+
+  return ret;
 }
