@@ -6,8 +6,7 @@ using namespace std;
 
 void BasebandFrequencyDomainSignal::delay( const double tau )
 {
-  const size_t length = size();
-  for ( size_t i = 0; i < length; i++ ) {
+  for ( size_t i = 0; i < size(); i++ ) {
     const double f = index_to_frequency( i );
     const double delay_in_radians = -2 * M_PI * tau * f;
     const complex multiplier = exp( complex { 0.0, delay_in_radians } );
@@ -26,9 +25,8 @@ void BasebandFrequencyDomainSignal::normalize()
 
 void BasebandFrequencyDomainSignal::delay_and_normalize( const double tau )
 {
-  const size_t length = size();
-  const double normalization = 1.0 / length;
-  for ( size_t i = 0; i < length; i++ ) {
+  const double normalization = 1.0 / size();
+  for ( size_t i = 0; i < size(); i++ ) {
     const double f = index_to_frequency( i );
     const double delay_in_radians = -2 * M_PI * tau * f;
     const complex multiplier = exp( complex { 0.0, delay_in_radians } );
@@ -54,8 +52,7 @@ double TimeDomainSignal::correlation( const TimeDomainSignal& other ) const
 
   complex<double> correlation = 0;
 
-  const size_t length = size();
-  for ( size_t i = 0; i < length; i++ ) {
+  for ( size_t i = 0; i < size(); i++ ) {
     correlation += conj( signal_[i] ) * other.signal_[i];
   }
 
@@ -65,4 +62,41 @@ double TimeDomainSignal::correlation( const TimeDomainSignal& other ) const
 double TimeDomainSignal::normalized_correlation( const TimeDomainSignal& other ) const
 {
   return correlation( other ) / sqrt( power() * other.power() );
+}
+
+TimeDomainSignal operator+( const TimeDomainSignal& a, const TimeDomainSignal& b )
+{
+  if ( a.size() != b.size() ) {
+    throw runtime_error( "signal substraction: size mismatch" );
+  }
+
+  if ( a.sample_rate() != b.sample_rate() ) {
+    throw runtime_error( "signal subtraction: sample-rate mismatch" );
+  }
+
+  TimeDomainSignal ret = a;
+  for ( size_t i = 0; i < a.size(); i++ ) {
+    ret.at( i ) += b.at( i );
+  }
+
+  return ret;
+}
+
+TimeDomainSignal operator-( const TimeDomainSignal& a, const TimeDomainSignal& b )
+{
+  return a + ( b * -1 );
+}
+
+TimeDomainSignal operator*( const TimeDomainSignal& a, const double value )
+{
+  TimeDomainSignal ret = a;
+  for ( auto& x : ret.signal() ) {
+    x *= value;
+  }
+  return ret;
+}
+
+TimeDomainSignal operator/( const TimeDomainSignal& a, const double value )
+{
+  return a * ( 1 / value );
 }

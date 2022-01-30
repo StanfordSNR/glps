@@ -38,6 +38,12 @@ public:
   double normalized_correlation( const TimeDomainSignal& other ) const;
 };
 
+TimeDomainSignal operator+( const TimeDomainSignal& a, const TimeDomainSignal& b );
+TimeDomainSignal operator-( const TimeDomainSignal& a, const TimeDomainSignal& b );
+
+TimeDomainSignal operator*( const TimeDomainSignal& a, const double value );
+TimeDomainSignal operator/( const TimeDomainSignal& a, const double value );
+
 class BasebandFrequencyDomainSignal
 {
   Signal signal_;
@@ -78,6 +84,11 @@ public:
   void normalize();
   void delay_and_normalize( const double tau );
 };
+
+static constexpr double power_gain_to_dB( const double power_gain )
+{
+  return 10 * log10( power_gain );
+}
 
 static constexpr double amplitude_gain_to_dB( const double amplitude_gain )
 {

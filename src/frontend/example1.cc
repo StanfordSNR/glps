@@ -45,6 +45,14 @@ pair<double, double> find_best_fit( const TimeDomainSignal& receiver_signal_minu
                                     const TimeDomainSignal& transmitter_signal,
                                     const TimeDomainSignal& tag_signal );
 
+void print_post_detection_snr( const string_view name,
+                               const double tag_offset,
+                               const double path_delay,
+                               const optional<double> path_gain,
+                               const TimeDomainSignal& transmitter_signal,
+                               const TimeDomainSignal& tag_signal,
+                               const TimeDomainSignal& receiver_signal_minus_transmitter );
+
 void program_body( const char* const wisdom_filename )
 {
   /* load pre-planned FFTs from file */
@@ -63,70 +71,79 @@ void program_body( const char* const wisdom_filename )
   /* step 3: choose values of unknowns */
 
   /* Unknown #1 (tag time offset relative to beginning of tag signal) */
-  const double tag_time_offset = ACTUAL_TAG_SAMPLE_OFFSET / SAMPLE_RATE;
+  const double actual_tag_time_offset = ACTUAL_TAG_SAMPLE_OFFSET / SAMPLE_RATE;
 
   /* Unknown #2 (path delay from transmitter->tag->receiver) */
-  const double path_delay = ACTUAL_PATH_DELAY;
+  const double actual_path_delay = ACTUAL_PATH_DELAY;
 
   /* step 4: synthesize reflected signal */
-  const auto reflected_signal
-    = synthesize_reflected_signal( tag_time_offset, path_delay, PATH_GAIN, transmitter_signal, tag_signal );
+  const auto reflected_signal = synthesize_reflected_signal(
+    actual_tag_time_offset, actual_path_delay, PATH_GAIN, transmitter_signal, tag_signal );
 
-  /* step 5: synthesize receiver signal (before noise) */
-  TimeDomainSignal receiver_signal { TRANSMITTER_SIGNAL_LEN, SAMPLE_RATE };
-  for ( unsigned int i = 0; i < receiver_signal.size(); i++ ) {
-    receiver_signal.at( i ) = reflected_signal.at( i ) + DIRECT_PATH_GAIN * transmitter_signal.at( i );
-  }
-
-  /* step 6: simulate listening with signal auto-interfering coherently and noise incoherently */
+  /* step 5: synthesize receiver signal (before noise) with signal adding coherently */
   const double signal_repetitions = LISTEN_DURATION * SAMPLE_RATE / TRANSMITTER_SIGNAL_LEN;
+
+  TimeDomainSignal receiver_signal_before_noise
+    = ( reflected_signal + transmitter_signal * DIRECT_PATH_GAIN ) * signal_repetitions;
+
+  /* step 6: simulate noise adding incoherently */
   normal_distribution<double> noise_distribution { 0, sqrt( signal_repetitions ) * sqrt( NOISE_POWER ) };
+
+  TimeDomainSignal receiver_signal = receiver_signal_before_noise;
   for ( auto& x : receiver_signal.signal() ) {
-    x *= signal_repetitions;
     x += noise_distribution( rng );
   }
 
+  cout << "Pre-direct-path-removal SNR:\t" << power_gain_to_dB( reflected_signal.power() / receiver_signal.power() )
+       << " dB\n";
+
   /* step 6b: computationally remove direct-path transmitter signal from receiver signal */
+  /* XXX For now, this assumes that the direct path has constant gain as a function of frequency. */
   const auto receiver_signal_minus_transmitter = decorrelate( receiver_signal, transmitter_signal );
+
+  cout << "Pre-detection SNR:\t\t"
+       << power_gain_to_dB( reflected_signal.power() / receiver_signal_minus_transmitter.power() ) << " dB\n";
 
   /* step 7: search for best values of the two unknowns */
   const auto [inferred_path_delay, inferred_tag_offset]
     = find_best_fit( receiver_signal_minus_transmitter, transmitter_signal, tag_signal );
 
   /* step 8: print diagnostics */
-  cerr << "Correct tag offset: " << tag_time_offset << "\n";
-  cerr << "Inferred tag offset: " << inferred_tag_offset << "\n";
-  cerr << "Tag offset error: " << 1e9 * abs( tag_time_offset - inferred_tag_offset ) << " ns\n";
+  cout << "\n";
+  cout << "   Correct tag offset: " << actual_tag_time_offset << "\n";
+  cout << "   Inferred tag offset: " << inferred_tag_offset << "\n";
+  cout << "   Tag offset error: " << 1e9 * abs( actual_tag_time_offset - inferred_tag_offset ) << " ns\n";
 
-  cerr << "\n";
+  cout << "\n";
 
-  cerr << "Correct path delay: " << path_delay << "\n";
-  cerr << "Inferred path delay: " << inferred_path_delay << "\n";
+  cout << "   Correct path delay: " << actual_path_delay << "\n";
+  cout << "   Inferred path delay: " << inferred_path_delay << "\n";
 
-  cerr << "Path delay error: " << 1e9 * abs( path_delay - inferred_path_delay ) << " ns (approx ";
+  cout << "   Path delay error: " << 1e9 * abs( actual_path_delay - inferred_path_delay ) << " ns (approx ";
 
-  const auto old_precision = cerr.precision( 2 );
-  cerr << fixed << SPEED_OF_LIGHT * abs( path_delay - inferred_path_delay ) << " meters)\n" << defaultfloat;
-  cerr.precision( old_precision );
+  const auto old_precision = cout.precision( 2 );
+  cout << fixed << SPEED_OF_LIGHT * abs( actual_path_delay - inferred_path_delay ) << " meters)\n" << defaultfloat;
+  cout.precision( old_precision );
 
-  cerr << "\n";
+  cout << "\n";
 
-  const auto local_reference_inferred
-    = synthesize_reflected_signal( inferred_tag_offset, inferred_path_delay, 1, transmitter_signal, tag_signal );
-  const double inferred_correlation
-    = receiver_signal_minus_transmitter.normalized_correlation( local_reference_inferred );
+  print_post_detection_snr( "Empirical",
+                            inferred_tag_offset,
+                            inferred_path_delay,
+                            {},
+                            transmitter_signal,
+                            tag_signal,
+                            receiver_signal_minus_transmitter );
 
-  cerr << "Correlation at best-fit constants: " << inferred_correlation << "\n";
+  cout << "\n";
 
-  const auto local_reference_exact
-    = synthesize_reflected_signal( tag_time_offset, path_delay, 1, transmitter_signal, tag_signal );
-  const double correct_correlation
-    = receiver_signal_minus_transmitter.normalized_correlation( local_reference_exact );
-
-  cerr << "Correlation at true constants: " << correct_correlation << "\n";
-
-  cerr << "Correlation error percentage: "
-       << 100 * ( inferred_correlation - correct_correlation ) / correct_correlation << "%\n";
+  print_post_detection_snr( "Oracular",
+                            actual_tag_time_offset,
+                            actual_path_delay,
+                            PATH_GAIN * signal_repetitions,
+                            transmitter_signal,
+                            tag_signal,
+                            receiver_signal_minus_transmitter );
 }
 
 TimeDomainSignal make_transmitter_signal( rng_t& rng )
@@ -223,12 +240,12 @@ pair<double, double> find_best_fit( const TimeDomainSignal& receiver_signal_minu
 {
   double min_path_delay = 0, max_path_delay = MAX_PATH_DELAY;
   double min_tag_offset = 0, max_tag_offset = double( tag_signal.size() ) / SAMPLE_RATE;
+  cerr << "Finding best fit... ";
+
   while ( ( max_path_delay - min_path_delay > 1e-12 ) or ( max_tag_offset - min_tag_offset > 1e-12 ) ) {
     double max_correlation_this_round = 0.0;
     optional<double> best_path_delay;
     optional<double> best_tag_offset;
-
-    cerr << ".";
 
     const double path_stepsize = ( max_path_delay - min_path_delay ) / SUBDIVISION_STEPS;
     const double tag_stepsize = ( max_tag_offset - min_tag_offset ) / SUBDIVISION_STEPS;
@@ -257,9 +274,38 @@ pair<double, double> find_best_fit( const TimeDomainSignal& receiver_signal_minu
   const double inferred_path_delay = ( min_path_delay + max_path_delay ) / 2.0;
   const double inferred_tag_offset = ( min_tag_offset + max_tag_offset ) / 2.0;
 
-  cerr << "\n";
+  cerr << "done.\n";
 
   return { inferred_path_delay, inferred_tag_offset };
+}
+
+void print_post_detection_snr( const string_view name,
+                               const double tag_offset,
+                               const double path_delay,
+                               const optional<double> path_gain,
+                               const TimeDomainSignal& transmitter_signal,
+                               const TimeDomainSignal& tag_signal,
+                               const TimeDomainSignal& receiver_signal_minus_transmitter )
+{
+  const auto local_reference = synthesize_reflected_signal(
+    tag_offset, path_delay, path_gain.value_or( 1 ), transmitter_signal, tag_signal );
+
+  const double power_correction_factor
+    = path_gain.has_value() ? 1.0 : receiver_signal_minus_transmitter.power() / local_reference.power();
+
+  const auto local_reference_for_comparison = local_reference * sqrt( power_correction_factor );
+
+  const double residual_power = ( receiver_signal_minus_transmitter - local_reference_for_comparison ).power();
+
+  const double correlation
+    = receiver_signal_minus_transmitter.normalized_correlation( local_reference_for_comparison );
+
+  cout << name << " correlation: " << correlation << " => " << power_gain_to_dB( .5 / ( 1 - correlation ) )
+       << " \"correlation power units\"\n";
+
+  cout << name
+       << " post-detection SNR: " << power_gain_to_dB( receiver_signal_minus_transmitter.power() / residual_power )
+       << " dB\n";
 }
 
 int main( int argc, char* argv[] )
