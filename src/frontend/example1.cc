@@ -15,8 +15,8 @@ using namespace std;
 constexpr double SAMPLE_RATE = 200'000;                        /* Hz */
 constexpr unsigned int TRANSMITTER_SIGNAL_LEN = 16384;         /* normally distributed chips */
 constexpr double TRANSMITTER_POWER = 10;                       /* watts */
-constexpr unsigned int TAG_CODE_LEN = 64;                      /* binary chips */
-constexpr unsigned int TAG_CODE_RATE_INVERSE = 8;              /* sample rate over tag code rate */
+constexpr unsigned int TAG_CODE_LEN = 256;                     /* binary chips */
+constexpr unsigned int TAG_CODE_RATE_INVERSE = 32;             /* sample rate over tag code rate */
 constexpr double MAX_PATH_DELAY = 4e-6;                        /* 4 microseconds -> about 1 km */
 constexpr double PATH_GAIN = dB_to_amplitude_gain( -100 );     /* dB */
 constexpr double LISTEN_DURATION = 60 * 60;                    /* seconds */
@@ -101,6 +101,10 @@ void run_simulation( rng_t& rng )
   const auto reflected_signal = synthesize_reflected_signal(
     actual_tag_time_offset, actual_path_delay, PATH_GAIN, transmitter_signal, tag_signal );
 
+  if ( abs( reflected_signal.normalized_correlation( transmitter_signal ) ) > 1e-14 ) {
+    throw runtime_error( "Spurious correlation between reflected and transmitter signals" );
+  }
+
   /* step 5: synthesize receiver signal (before noise) with signal adding coherently */
   const double signal_repetitions = LISTEN_DURATION * SAMPLE_RATE / TRANSMITTER_SIGNAL_LEN;
 
@@ -172,8 +176,10 @@ TimeDomainSignal make_transmitter_signal( rng_t& rng )
   TimeDomainSignal transmitter_signal { TRANSMITTER_SIGNAL_LEN, SAMPLE_RATE };
 
   normal_distribution<double> transmitter_signal_dist { 0.0, sqrt( TRANSMITTER_POWER ) };
-  for ( auto& x : transmitter_signal.signal() ) {
-    x = transmitter_signal_dist( rng );
+  for ( size_t i = 0; i < TRANSMITTER_SIGNAL_LEN / 2; i++ ) {
+    const auto x = transmitter_signal_dist( rng );
+    transmitter_signal.at( i ) = x;
+    transmitter_signal.at( i + TRANSMITTER_SIGNAL_LEN / 2 ) = x;
   }
 
   /* remove mean from transmitter signal */
@@ -205,13 +211,15 @@ TimeDomainSignal make_tag_signal( rng_t& rng )
   }
 
   /* now: synthesize tag signal from tag code */
-  TimeDomainSignal tag_signal { TAG_CODE_LEN * TAG_CODE_RATE_INVERSE, SAMPLE_RATE };
+  TimeDomainSignal tag_signal { TRANSMITTER_SIGNAL_LEN, SAMPLE_RATE };
 
-  for ( unsigned int chip_num = 0; chip_num < tag_code.size(); chip_num++ ) {
-    for ( unsigned int sample_num = chip_num * TAG_CODE_RATE_INVERSE;
-          sample_num < ( chip_num + 1 ) * TAG_CODE_RATE_INVERSE;
-          sample_num++ ) {
-      tag_signal.at( sample_num ) = tag_code.at( chip_num ) ? 1 : -1;
+  for ( size_t sample_num = 0; sample_num < tag_signal.size(); sample_num++ ) {
+    const size_t chip_num = ( sample_num / TAG_CODE_RATE_INVERSE ) % TAG_CODE_LEN;
+
+    tag_signal.at( sample_num ) = tag_code.at( chip_num ) ? 1 : -1;
+
+    if ( sample_num >= tag_signal.size() / 2 ) {
+      tag_signal.at( sample_num ) *= -1;
     }
   }
 
