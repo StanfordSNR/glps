@@ -5,7 +5,7 @@
 
 using namespace std;
 
-mt19937 get_random_generator()
+rng_t get_random_generator()
 {
   auto rd = random_device();
   array<uint32_t, mt19937::state_size> seed_data {};
