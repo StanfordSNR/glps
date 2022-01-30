@@ -26,7 +26,7 @@ class FFTPlan
 public:
   FFTPlan( const size_t size, const int sign, const bool make_new_plan );
   ~FFTPlan();
-  void execute( const Signal& input, Signal& output );
+  void execute( const Signal& input, Signal& output ) const;
 
   FFTPlan( const FFTPlan& other ) = delete;
   FFTPlan& operator=( const FFTPlan& other ) = delete;
@@ -41,7 +41,7 @@ public:
     : plan_( size, FFTW_FORWARD, false )
   {}
 
-  void execute( const TimeDomainSignal& input, BasebandFrequencyDomainSignal& output );
+  void execute( const TimeDomainSignal& input, BasebandFrequencyDomainSignal& output ) const;
 };
 
 class ReverseFFT
@@ -53,7 +53,12 @@ public:
     : plan_( size, FFTW_BACKWARD, false )
   {}
 
-  void execute( const BasebandFrequencyDomainSignal& input, TimeDomainSignal& output );
+  void execute( const BasebandFrequencyDomainSignal& input, TimeDomainSignal& output ) const;
 };
 
 TimeDomainSignal delay( const TimeDomainSignal& signal, const double tau );
+
+TimeDomainSignal delay( const TimeDomainSignal& signal,
+                        const double tau,
+                        const ForwardFFT& fft,
+                        const ReverseFFT& ifft );

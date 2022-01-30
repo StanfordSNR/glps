@@ -196,12 +196,15 @@ TimeDomainSignal synthesize_reflected_signal( const double tag_time_offset,
                                               const TimeDomainSignal& transmitter_signal,
                                               const TimeDomainSignal& tag_signal )
 {
+  static ForwardFFT tag_fft { tag_signal.size() }, transmitter_fft { transmitter_signal.size() };
+  static ReverseFFT tag_ifft { tag_signal.size() }, transmitter_ifft { transmitter_signal.size() };
+
   if ( transmitter_signal.sample_rate() != tag_signal.sample_rate() ) {
     throw runtime_error( "synthesize_reflected_signal: sample-rate mismatch" );
   }
 
-  auto delayed_tag_signal = delay( tag_signal, tag_time_offset );
-  auto delayed_transmitter_signal = delay( transmitter_signal, path_delay );
+  auto delayed_tag_signal = delay( tag_signal, tag_time_offset, tag_fft, tag_ifft );
+  auto delayed_transmitter_signal = delay( transmitter_signal, path_delay, transmitter_fft, transmitter_ifft );
   TimeDomainSignal reflected_signal { transmitter_signal.size(), transmitter_signal.sample_rate() };
   for ( unsigned int i = 0; i < delayed_tag_signal.size(); i++ ) {
     reflected_signal.at( i )

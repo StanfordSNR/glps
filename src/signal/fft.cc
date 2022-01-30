@@ -132,7 +132,7 @@ FFTPlan::~FFTPlan()
   fftw_destroy_plan( plan_ );
 }
 
-void FFTPlan::execute( const Signal& input, Signal& output )
+void FFTPlan::execute( const Signal& input, Signal& output ) const
 {
   if ( input.size() != size_ or output.size() != size_ ) {
     throw runtime_error( "size mismatch" );
@@ -152,7 +152,7 @@ void FFTPlan::execute( const Signal& input, Signal& output )
                     reinterpret_cast<fftw_complex*>( output.data() ) );
 }
 
-void ForwardFFT::execute( const TimeDomainSignal& input, BasebandFrequencyDomainSignal& output )
+void ForwardFFT::execute( const TimeDomainSignal& input, BasebandFrequencyDomainSignal& output ) const
 {
   if ( input.sample_rate() != output.sample_rate() ) {
     throw runtime_error( "sample-rate mismatch" );
@@ -161,7 +161,7 @@ void ForwardFFT::execute( const TimeDomainSignal& input, BasebandFrequencyDomain
   plan_.execute( input.signal(), output.signal() );
 }
 
-void ReverseFFT::execute( const BasebandFrequencyDomainSignal& input, TimeDomainSignal& output )
+void ReverseFFT::execute( const BasebandFrequencyDomainSignal& input, TimeDomainSignal& output ) const
 {
   if ( input.sample_rate() != output.sample_rate() ) {
     throw runtime_error( "sample-rate mismatch" );
@@ -175,6 +175,14 @@ TimeDomainSignal delay( const TimeDomainSignal& signal, const double tau )
   ForwardFFT fft { signal.size() };
   ReverseFFT ifft { signal.size() };
 
+  return delay( signal, tau, fft, ifft );
+}
+
+TimeDomainSignal delay( const TimeDomainSignal& signal,
+                        const double tau,
+                        const ForwardFFT& fft,
+                        const ReverseFFT& ifft )
+{
   BasebandFrequencyDomainSignal frequency_domain { signal.size(), signal.sample_rate() };
   fft.execute( signal, frequency_domain );
 
