@@ -110,14 +110,14 @@ void program_body( const char* const wisdom_filename )
 
   /* step 8: print diagnostics */
   cout << "\n";
-  cout << "   Correct tag offset: " << actual_tag_time_offset << "\n";
-  cout << "   Inferred tag offset: " << inferred_tag_offset << "\n";
+  cout << "   Correct tag offset: " << actual_tag_time_offset * 1e3 << " ms\n";
+  cout << "   Inferred tag offset: " << inferred_tag_offset * 1e3 << " ms\n";
   cout << "   Tag offset error: " << 1e9 * abs( actual_tag_time_offset - inferred_tag_offset ) << " ns\n";
 
   cout << "\n";
 
-  cout << "   Correct path delay: " << actual_path_delay << "\n";
-  cout << "   Inferred path delay: " << inferred_path_delay << "\n";
+  cout << "   Correct path delay: " << actual_path_delay * 1e6 << " μs\n";
+  cout << "   Inferred path delay: " << inferred_path_delay * 1e6 << " μs\n";
 
   cout << "   Path delay error: " << 1e9 * abs( actual_path_delay - inferred_path_delay ) << " ns (approx ";
 
