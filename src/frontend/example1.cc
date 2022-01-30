@@ -105,29 +105,33 @@ void run_simulation( rng_t& rng )
     throw runtime_error( "Spurious correlation between reflected and transmitter signals" );
   }
 
-  /* step 5: synthesize receiver signal (before noise) with signal adding coherently */
+  /* step 5: synthesize receiver signal (before noise) with signal adding coherently based on listen duration */
   const double signal_repetitions = LISTEN_DURATION * SAMPLE_RATE / TRANSMITTER_SIGNAL_LEN;
 
-  TimeDomainSignal receiver_signal_before_noise
-    = ( reflected_signal + transmitter_signal * DIRECT_PATH_GAIN ) * signal_repetitions;
+  const auto reflected_signal_after_listening = reflected_signal * signal_repetitions;
+  const auto direct_path_after_listening = transmitter_signal * DIRECT_PATH_GAIN * signal_repetitions;
+
+  TimeDomainSignal receiver_signal_before_noise = reflected_signal_after_listening + direct_path_after_listening;
 
   /* step 6: simulate noise adding incoherently */
   normal_distribution<double> noise_distribution { 0, sqrt( signal_repetitions ) * sqrt( NOISE_POWER ) };
 
-  TimeDomainSignal receiver_signal = receiver_signal_before_noise;
-  for ( auto& x : receiver_signal.signal() ) {
-    x += noise_distribution( rng );
+  TimeDomainSignal noise_signal { TRANSMITTER_SIGNAL_LEN, SAMPLE_RATE };
+  for ( auto& x : noise_signal.signal() ) {
+    x = noise_distribution( rng );
   }
 
-  cout << "Pre-direct-path-removal SNR:\t" << power_gain_to_dB( reflected_signal.power() / receiver_signal.power() )
-       << " dB\n";
+  const auto receiver_signal = receiver_signal_before_noise + noise_signal;
+
+  cout << "Pre-direct-path-removal SINR:\t"
+       << power_gain_to_dB( reflected_signal_after_listening.power() / receiver_signal.power() ) << " dB\n";
 
   /* step 6b: computationally remove direct-path transmitter signal from receiver signal */
   /* XXX For now, this assumes that the direct path has constant gain as a function of frequency. */
   const auto receiver_signal_minus_transmitter = decorrelate( receiver_signal, transmitter_signal );
 
   cout << "Pre-detection SNR:\t\t"
-       << power_gain_to_dB( reflected_signal.power() / receiver_signal_minus_transmitter.power() ) << " dB\n";
+       << power_gain_to_dB( receiver_signal_minus_transmitter.power() / noise_signal.power() ) << " dB\n";
 
   /* step 7: search for best values of the two unknowns */
   const auto [inferred_path_delay, inferred_tag_offset]
