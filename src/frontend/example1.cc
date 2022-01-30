@@ -21,30 +21,38 @@ constexpr double MAX_PATH_DELAY = 4e-6;                        /* 4 microseconds
 constexpr double PATH_GAIN = dB_to_amplitude_gain( -100 );     /* dB */
 constexpr double LISTEN_DURATION = 60 * 60;                    /* seconds */
 constexpr double NOISE_POWER = 1e-3 * dB_to_power_gain( -50 ); /* -50 dBm of receiver noise */
-constexpr double SUBDIVISION_STEPS = 4.0;
-constexpr double DIRECT_PATH_GAIN = 1.0;
+constexpr double SUBDIVISION_STEPS = 4.0;                      /* steps of division for fitting algorithm */
+constexpr double DIRECT_PATH_GAIN = 1.0;                       /* constant gain on direct path */
 
+/* true value of unknowns */
 constexpr double ACTUAL_TAG_SAMPLE_OFFSET = TAG_CODE_LEN * TAG_CODE_RATE_INVERSE / 2.0;
 constexpr double ACTUAL_PATH_DELAY = MAX_PATH_DELAY / 2.0;
 
 constexpr double SPEED_OF_LIGHT = 299'792'458; /* meters per second in vacuum */
 
+/* helper routine to make the transmitter signal */
 TimeDomainSignal make_transmitter_signal( rng_t& rng );
 
+/* helper routine to make the tag signal */
 TimeDomainSignal make_tag_signal( rng_t& rng );
 
+/* helper routine to modulate the transmitter signal by the tag signal */
 TimeDomainSignal synthesize_reflected_signal( const double tag_time_offset,
                                               const double path_delay,
                                               const double path_gain,
                                               const TimeDomainSignal& transmitter_signal,
                                               const TimeDomainSignal& tag_signal );
 
+/* remove any correlation with the 'nuisance' signal from the input */
 TimeDomainSignal decorrelate( const TimeDomainSignal& input, const TimeDomainSignal& nuisance );
 
+/* find values of tag_time_offset and path_delay that produce a local-reference reflected signal that maximizes
+ * correlation with what was received */
 pair<double, double> find_best_fit( const TimeDomainSignal& receiver_signal_minus_transmitter,
                                     const TimeDomainSignal& transmitter_signal,
                                     const TimeDomainSignal& tag_signal );
 
+/* calculate and print post-detection SNR statistics */
 void print_post_detection_snr( const string_view name,
                                const double tag_offset,
                                const double path_delay,
@@ -53,7 +61,11 @@ void print_post_detection_snr( const string_view name,
                                const TimeDomainSignal& tag_signal,
                                const TimeDomainSignal& receiver_signal_minus_transmitter );
 
-void program_body( const char* const wisdom_filename )
+/* run one realization of the simulation */
+void run_simulation( rng_t& rng );
+
+/* main loop */
+void program_body( const char* const wisdom_filename, const char* const count_str )
 {
   /* load pre-planned FFTs from file */
   ReadOnlyFile wisdom { wisdom_filename };
@@ -62,6 +74,15 @@ void program_body( const char* const wisdom_filename )
 
   auto rng = get_random_generator();
 
+  const unsigned int realization_count = stoul( count_str );
+
+  for ( unsigned int i = 0; i < realization_count; i++ ) {
+    run_simulation( rng );
+  }
+}
+
+void run_simulation( rng_t& rng )
+{
   /* step 1: make transmitter signal */
   auto transmitter_signal = make_transmitter_signal( rng );
 
@@ -317,12 +338,12 @@ int main( int argc, char* argv[] )
       abort();
     }
 
-    if ( argc != 2 ) {
-      cerr << "Usage: " << argv[0] << " wisdom_file\n";
+    if ( argc != 3 ) {
+      cerr << "Usage: " << argv[0] << " wisdom_file num_realizations\n";
       return EXIT_FAILURE;
     }
 
-    program_body( argv[1] );
+    program_body( argv[1], argv[2] );
     return EXIT_SUCCESS;
   } catch ( const exception& e ) {
     cerr << e.what() << "\n";
