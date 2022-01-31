@@ -81,7 +81,11 @@ void program_body( const char* const wisdom_filename, const char* const count_st
   const unsigned int realization_count = stoul( count_str );
 
   for ( unsigned int i = 0; i < realization_count; i++ ) {
-    run_simulation( rng );
+    try {
+      run_simulation( rng );
+    } catch ( const exception& e ) {
+      cerr << "\n\nfailure on simulation " << i << ": " << e.what() << "\n";
+    }
   }
 }
 
