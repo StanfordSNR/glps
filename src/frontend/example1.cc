@@ -19,7 +19,7 @@ constexpr unsigned int TAG_CODE_LEN = 256;                     /* binary chips *
 constexpr unsigned int TAG_CODE_RATE_INVERSE = 32;             /* sample rate over tag code rate */
 constexpr double MAX_PATH_DELAY = 4e-6;                        /* 4 microseconds -> about 1 km */
 constexpr double PATH_GAIN = dB_to_amplitude_gain( -100 );     /* dB */
-constexpr double LISTEN_DURATION = 60 * 60;                    /* seconds */
+constexpr double LISTEN_DURATION = 819.2;                      /* seconds */
 constexpr double NOISE_POWER = 1e-3 * dB_to_power_gain( -50 ); /* -50 dBm of receiver noise */
 constexpr double SUBDIVISION_STEPS = 4.0;                      /* steps of division for fitting algorithm */
 constexpr double DIRECT_PATH_GAIN = 1.0;                       /* gain on direct path */
@@ -170,6 +170,9 @@ void run_simulation( rng_t& rng )
 
   cout << "\n";
 
+  cout << "Incident SNR [reflected_signal / noise]: "
+       << power_gain_to_dB( reflected_signal_after_listening.power() / noise_signal.power() ) << " dB\n";
+
   cout << "Incident SINR [reflected_signal / (direct path + noise)]: "
        << power_gain_to_dB( reflected_signal_after_listening.power()
                             / ( direct_path_after_listening + noise_signal ).power() )
@@ -184,7 +187,8 @@ void run_simulation( rng_t& rng )
 
   const auto pre_detection_residue = receiver_signal_minus_transmitter - reflected_signal_after_listening;
 
-  cout << "Pre-detection SNR [reflected_signal / (reconstructed_reflected_signal - reflected_signal): "
+  cout << "Pre-detection SNR after 2x folding [reflected_signal / (reconstructed_reflected_signal - "
+          "reflected_signal): "
        << power_gain_to_dB( reflected_signal_after_listening.power() / pre_detection_residue.power() ) << " dB\n";
 
   cout << "\n";
