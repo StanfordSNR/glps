@@ -24,11 +24,11 @@ void test_config( double SAMPLE_RATE, double FREQUENCY, double DELAY, size_t LEN
   auto simulated_with_delay = delay( input, DELAY );
 
   for ( unsigned int i = 0; i < target_reference.size(); i++ ) {
-    if ( abs( simulated_with_delay.at( i ).imag() ) > 1e-8 ) {
+    if ( abs( simulated_with_delay.at( i ).imag() ) > 1e-13 ) {
       throw runtime_error( "simulated delayed signal had imaginary component at index " + to_string( i ) );
     }
 
-    if ( abs( target_reference.at( i ) - simulated_with_delay.at( i ) ) > 1e-7 ) {
+    if ( abs( target_reference.at( i ) - simulated_with_delay.at( i ) ) > 1e-11 ) {
       throw runtime_error( "simulated and reference delayed signal differ at index " + to_string( i ) );
     }
   }

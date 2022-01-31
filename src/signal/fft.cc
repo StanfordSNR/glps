@@ -183,13 +183,29 @@ TimeDomainSignal delay( const TimeDomainSignal& signal,
                         const ForwardFFT& fft,
                         const ReverseFFT& ifft )
 {
+  for ( unsigned int i = 0; i < signal.size(); i++ ) {
+    if ( abs( signal.at( i ).imag() ) > 1e-13 ) {
+      throw runtime_error( "input signal had imaginary component at index " + to_string( i ) );
+    }
+  }
+
   BasebandFrequencyDomainSignal frequency_domain { signal.size(), signal.sample_rate() };
   fft.execute( signal, frequency_domain );
 
+  frequency_domain.verify_hermitian();
+
   frequency_domain.delay_and_normalize( tau );
+
+  frequency_domain.verify_hermitian();
 
   TimeDomainSignal ret { signal.size(), signal.sample_rate() };
   ifft.execute( frequency_domain, ret );
+
+  for ( unsigned int i = 0; i < signal.size(); i++ ) {
+    if ( abs( ret.at( i ).imag() ) > 1e-9 ) {
+      throw runtime_error( "output signal had imaginary component at index " + to_string( i ) );
+    }
+  }
 
   return ret;
 }

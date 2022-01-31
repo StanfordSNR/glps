@@ -1,5 +1,6 @@
 #include "signal.hh"
 
+#include <iostream>
 #include <numeric>
 
 using namespace std;
@@ -7,6 +8,10 @@ using namespace std;
 void BasebandFrequencyDomainSignal::delay( const double tau )
 {
   for ( size_t i = 0; i < size(); i++ ) {
+    if ( i == 0 or i == size() / 2 ) { /* DC and Nyquist frequencies are purely real */
+      continue;
+    }
+
     const double f = index_to_frequency( i );
     const double delay_in_radians = -2 * M_PI * tau * f;
     const complex multiplier = exp( complex { 0.0, delay_in_radians } );
@@ -27,6 +32,11 @@ void BasebandFrequencyDomainSignal::delay_and_normalize( const double tau )
 {
   const double normalization = 1.0 / size();
   for ( size_t i = 0; i < size(); i++ ) {
+    if ( i == 0 or i == size() / 2 ) { /* DC and Nyquist frequencies are purely real */
+      signal_[i] *= normalization;
+      continue;
+    }
+
     const double f = index_to_frequency( i );
     const double delay_in_radians = -2 * M_PI * tau * f;
     const complex multiplier = exp( complex { 0.0, delay_in_radians } );
@@ -35,9 +45,23 @@ void BasebandFrequencyDomainSignal::delay_and_normalize( const double tau )
   }
 }
 
+void BasebandFrequencyDomainSignal::verify_hermitian() const
+{
+  for ( size_t i = 0; i < size(); i++ ) {
+    const auto& this_element = at( i );
+    const auto& other_element = at( ( size() - i ) % size() );
+    if ( abs( this_element - conj( other_element ) ) > 1e-7 ) {
+      cerr << i << "/" << size() << ": " << this_element << " vs. " << ( ( size() - i ) % size() ) << ": "
+           << conj( other_element ) << "\n";
+      throw runtime_error( "not hermitian" );
+    }
+  }
+}
+
 double TimeDomainSignal::power() const
 {
-  return accumulate( signal().begin(), signal().end(), 0.0, []( auto x, auto y ) { return x + norm( y ); } );
+  return accumulate( signal().begin(), signal().end(), 0.0, []( auto x, auto y ) { return x + norm( y ); } )
+         / double( size() );
 }
 
 double TimeDomainSignal::correlation( const TimeDomainSignal& other ) const
@@ -61,7 +85,7 @@ double TimeDomainSignal::correlation( const TimeDomainSignal& other ) const
 
 double TimeDomainSignal::normalized_correlation( const TimeDomainSignal& other ) const
 {
-  return correlation( other ) / sqrt( power() * other.power() );
+  return correlation( other ) / sqrt( size() * size() * power() * other.power() );
 }
 
 TimeDomainSignal operator+( const TimeDomainSignal& a, const TimeDomainSignal& b )

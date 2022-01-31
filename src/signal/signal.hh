@@ -83,6 +83,8 @@ public:
   void delay( const double tau );
   void normalize();
   void delay_and_normalize( const double tau );
+
+  void verify_hermitian() const;
 };
 
 static constexpr double power_gain_to_dB( const double power_gain )
